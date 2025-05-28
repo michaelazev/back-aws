@@ -10,25 +10,20 @@ const authenticateToken = require('./middleware/authMiddleware');
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Configuração do CORS
-const corsOptions = {
+// Configuração do CORS - atualize para:
+app.use(cors({
   origin: [
     'https://front-aws-psi.vercel.app',
     'https://tecfit-nu.vercel.app',
     'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Adicione OPTIONS
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'Access-Control-Allow-Origin',
-    'Access-Control-Allow-Headers'
-  ],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
-};
+}));
 
-// Habilite CORS pré-flight para todas as rotas
-app.options('*', cors(corsOptions)); // Adicione esta linha
+// Adicione isto para lidar com requisições OPTIONS
+app.options('*', cors());// Adicione esta linha
 app.use(cors(corsOptions));
 
 // Adicione este middleware para lidar com requisições OPTIONS

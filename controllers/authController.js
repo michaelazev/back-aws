@@ -6,6 +6,23 @@ const fs = require('fs');
 
 const router = express.Router();
 
+// Adicione no início do arquivo, após as importações
+router.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://front-aws-psi.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
+
+// Adicione isto antes das rotas POST
+router.options('/register', (req, res) => {
+  res.sendStatus(200);
+});
+
+router.options('/login', (req, res) => {
+  res.sendStatus(200);
+});
+
 // Configuração do pool de conexões
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'tecfitdb.mysql.database.azure.com',
