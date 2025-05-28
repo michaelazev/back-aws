@@ -10,29 +10,20 @@ const authenticateToken = require('./middleware/authMiddleware');
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Configuração do CORS - atualize para:
-app.use(cors({
+// Configuração do CORS
+const corsOptions = {
   origin: [
     'https://front-aws-psi.vercel.app',
     'https://tecfit-nu.vercel.app',
     'http://localhost:3000'
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Adicione OPTIONS
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
-}));
+};
 
-// Adicione isto para lidar com requisições OPTIONS
-app.options('*', cors());// Adicione esta linha
 app.use(cors(corsOptions));
-
-// Adicione este middleware para lidar com requisições OPTIONS
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', corsOptions.origin);
-  res.header('Access-Control-Allow-Methods', corsOptions.methods.join(','));
-  res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
-  next();
-});
+app.options('*', cors(corsOptions));
 
 // Middleware para analisar JSON  
 app.use(express.json());
@@ -44,7 +35,7 @@ async function connectToDatabase() {
     console.log('✅ Conectado ao banco de dados SQL Server');
   } catch (err) {
     console.error('❌ Erro ao conectar ao banco de dados:', err);
-    process.exit(1); // Encerra a aplicação em caso de erro crítico
+    process.exit(1);
   }
 }
 
