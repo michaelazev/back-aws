@@ -1,120 +1,70 @@
 const express = require('express');
-const mysql = require('mysql2/promise'); // Use o módulo de promessas do mysql2
+const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
+const mysql = require('mysql2/promise');
 
-const router = express.Router();
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+});
 
-// Adicione no início do arquivo, após as importações
+// Configuração do CORS para rotas específicas
 router.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://front-aws-psi.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
 
-// Adicione isto antes das rotas POST
-router.options('/register', (req, res) => {
-  res.sendStatus(200);
-});
-
-router.options('/login', (req, res) => {
-  res.sendStatus(200);
-});
-
-// Configuração do pool de conexões
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'tecfitdb.mysql.database.azure.com',
-  user: process.env.DB_USER || 'tecfit',
-  password: process.env.DB_PASSWORD || 'Projetos2025',
-  database: process.env.DB_NAME || 'tec_fit',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
-
-// Rota de registro
+// Rota de Registro
 router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body;
-
   try {
-    const connection = await pool.getConnection();
+    const { username, email, password } = req.body;
+    const [userExists] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
 
-    // Verifica se o usuário já existe
-    const [rows] = await connection.execute('SELECT * FROM users WHERE Username = ?', [username]);
-    if (rows.length > 0) {
-      connection.release();
-      return res.status(409).json({ message: 'Nome de usuário já existe.' });
+    if (userExists.length > 0) {
+      return res.status(409).json({ error: 'Email já cadastrado!' });
     }
 
-    const [emailRows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
-    if (emailRows.length > 0) {
-      connection.release();
-      return res.status(409).json({ message: 'Email já existe.' });
-    }
-
-    // Criptografa a senha
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Insere o novo usuário com o userId
-    const [result] = await connection.execute(
-      'INSERT INTO users (Username, Email, Password) VALUES (?, ?, ?)',
+    await pool.query(
+      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
       [username, email, hashedPassword]
     );
 
-    connection.release();
-    res.status(201).json({ message: 'Usuário registrado com sucesso!', userId: result.insertId });
-  } catch (err) {
-    console.error('Erro ao registrar usuário:', err);
-    res.status(500).json({ message: 'Erro ao registrar usuário.' });
+    res.status(201).json({ message: 'Usuário criado com sucesso!' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro no registro!' });
   }
 });
 
-// Rota de login
+// Rota de Login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-
   try {
-      const connection = await pool.getConnection();
+    const { email, password } = req.body;
+    const [user] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
 
-      // Verifica se o email existe
-      const [rows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
-      if (rows.length === 0) {
-          connection.release();
-          return res.status(401).json({ message: 'Credenciais inválidas.' });
-      }
+    if (!user.length) {
+      return res.status(401).json({ error: 'Credenciais inválidas!' });
+    }
 
-      const user = rows[0];
+    const isPasswordValid = await bcrypt.compare(password, user[0].password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Credenciais inválidas!' });
+    }
 
-      // Verifica a senha
-      const isPasswordValid = await bcrypt.compare(password, user.Password);
-      if (!isPasswordValid) {
-          connection.release();
-          return res.status(401).json({ message: 'Credenciais inválidas.' });
-      }
+    const token = jwt.sign(
+      { userId: user[0].id, email: user[0].email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
-      connection.release();
-
-      // Gera o token JWT
-      const token = jwt.sign(
-          { userId: user.Id, username: user.Username, email: user.Email }, // Payload
-          jwtSecret, // Chave secreta
-          { expiresIn: '1h' } // Tempo de expiração
-      );
-
-      // Retorna o token e os dados do usuário
-      res.status(200).json({
-          message: 'Login bem-sucedido!',
-          token,
-          user: {
-              username: user.Username,
-              email: user.Email
-          }
-      });
-  } catch (err) {
-      console.error('Erro ao fazer login:', err);
-      res.status(500).json({ message: 'Erro ao fazer login.' });
+    res.json({ token, user: { email: user[0].email, username: user[0].username } });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro no login!' });
   }
 });
 

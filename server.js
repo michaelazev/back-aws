@@ -1,12 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const sql = require('mysql2');
-const dbConfig = require('./config/db.config');
+const mysql = require('mysql2/promise'); // Usando promises
+
+// Importação das rotas
 const authRoutes = require('./controllers/authController');
-const userDataRoutes = require('./controllers/userController');
-const gymDataRoutes = require('./controllers/gymController');
+const userRoutes = require('./controllers/userController');
+const gymRoutes = require('./controllers/gymController');
 const authenticateToken = require('./middleware/authMiddleware');
+
 const app = express();
 const port = process.env.PORT || 8080;
 
@@ -18,38 +20,42 @@ const corsOptions = {
     'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-
-// Middleware para analisar JSON  
 app.use(express.json());
 
-// Conectar ao banco de dados
-async function connectToDatabase() {
-  try {
-    await sql.connect(dbConfig);
-    console.log('✅ Conectado ao banco de dados SQL Server');
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao banco de dados:', err);
-    process.exit(1);
-  }
-}
+// Conexão com o banco de dados (opcional, pode ser feito nos controllers)
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
 
-connectToDatabase();
-
-// Rotas de autenticação
+// Rotas públicas (login/register)
 app.use('/auth', authRoutes);
 
-// Rotas de dados (protegidas por autenticação)
-app.use('/api/data/users', userDataRoutes);
-app.use('/api/data/gym', gymDataRoutes);
-app.use('/user', authenticateToken, userDataRoutes);
-app.use('/favorite', authenticateToken);
+// Rotas protegidas por autenticação JWT
+app.use('/api/users', authenticateToken, userRoutes);
+app.use('/api/gym', authenticateToken, gymRoutes);
+
+// Rota de teste para verificar se o servidor está rodando
+app.get('/', (req, res) => {
+  res.send('Backend TecFit está funcionando! 🚀');
+});
+
+// Middleware de erro global
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Erro interno no servidor!' });
+});
 
 app.listen(port, () => {
-  console.log(`🚀 Servidor rodando na porta ${port}`);
+  console.log(`Servidor rodando na porta ${port}`);
 });
