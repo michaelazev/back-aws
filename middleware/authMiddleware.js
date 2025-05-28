@@ -1,4 +1,3 @@
-// middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
 const jwtSecret = process.env.JWT_SECRET;
 
@@ -6,7 +5,7 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (token == null) {
+  if (!token) {
     return res.status(401).json({ message: 'Token não fornecido.' });
   }
   
@@ -14,7 +13,7 @@ const authenticateToken = (req, res, next) => {
     if (err) {
       return res.status(403).json({ message: 'Token inválido ou expirado.' });
     }
-    req.userId = user.userId;
+    req.user = user; // Agora temos acesso a todos os dados do usuário
     next();
   });
 };

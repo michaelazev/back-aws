@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise'); // Usando promises
+const { connectDB } = require('./config/db');// Usando promises
 
 // Importação das rotas
 const authRoutes = require('./controllers/authController');
@@ -11,6 +11,11 @@ const authenticateToken = require('./middleware/authMiddleware');
 
 const app = express();
 const port = process.env.PORT || 8080;
+
+// Teste imediato
+console.log('Variáveis de ambiente carregadas:');
+console.log('PORT:', process.env.PORT);
+console.log('MONGODB_URI:', process.env.MONGODB_URI?.substring(0, 30) + '...'); // Mostra só o início por segurança
 
 // Configuração do CORS
 const corsOptions = {
@@ -27,23 +32,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Conexão com o banco de dados (opcional, pode ser feito nos controllers)
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
-
 // Rotas públicas (login/register)
 app.use('/auth', authRoutes);
 
 // Rotas protegidas por autenticação JWT
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/gym', authenticateToken, gymRoutes);
+
+// Conecte ao MongoDB
+connectDB();
 
 // Rota de teste para verificar se o servidor está rodando
 app.get('/', (req, res) => {

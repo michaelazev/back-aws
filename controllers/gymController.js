@@ -1,105 +1,148 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-require('dotenv').config(); // Adicione esta linha para carregar variáveis de ambiente
-
 const router = express.Router();
-const jwtSecret = process.env.JWT_SECRET; // Agora pegando do ambiente
+const mongoose = require('mongoose');
+const authenticateToken = require('../middleware/authMiddleware');
+const Gym = require('../models/Gym');
 
-// Configuração do pool de conexões
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'tecfitdb.mysql.database.azure.com',
-  user: process.env.DB_USER || 'tecfit',
-  password: process.env.DB_PASSWORD || 'Projetos2025',
-  database: process.env.DB_NAME || 'tec_fit',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+// Criar uma nova academia
+router.post('/', authenticateToken, async (req, res) => {
+    try {
+        const { name, address, open_time, email_address, phone } = req.body;
+        
+        // Verifica se a academia já existe
+        const existingGym = await Gym.findOne({ name, user_responsible: req.user.userId });
+        if (existingGym) {
+            return res.status(409).json({ error: 'Você já possui uma academia com este nome.' });
+        }
+
+        const gym = new Gym({
+            name,
+            address,
+            open_time,
+            email_address,
+            phone,
+            user_responsible: req.user.userId
+        });
+
+        const savedGym = await gym.save();
+        
+        res.status(201).json({
+            message: 'Academia criada com sucesso!',
+            gym: {
+                _id: savedGym._id,
+                name: savedGym.name,
+                address: savedGym.address,
+                open_time: savedGym.open_time,
+                email_address: savedGym.email_address,
+                phone: savedGym.phone,
+                createdAt: savedGym.createdAt
+            }
+        });
+    } catch (error) {
+        console.error('Erro ao criar academia:', error);
+        res.status(500).json({ error: 'Erro ao criar academia' });
+    }
 });
 
-// Rota de registro
-router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body;
+// Listar todas as academias do usuário
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        const gyms = await Gym.find({ user_responsible: req.user.userId })
+            .select('_id name address open_time email_address phone createdAt')
+            .sort({ createdAt: -1 });
 
-  try {
-    const connection = await pool.getConnection();
-
-    // Verifica se o usuário já existe
-    const [rows] = await connection.execute('SELECT * FROM users WHERE Username = ?', [username]);
-    if (rows.length > 0) {
-      connection.release();
-      return res.status(409).json({ message: 'Nome de usuário já existe.' });
+        res.json(gyms);
+    } catch (error) {
+        console.error('Erro ao listar academias:', error);
+        res.status(500).json({ error: 'Erro ao listar academias' });
     }
-
-    const [emailRows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
-    if (emailRows.length > 0) {
-      connection.release();
-      return res.status(409).json({ message: 'Email já existe.' });
-    }
-
-    // Criptografa a senha
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Insere o novo usuário com o userId
-    const [result] = await connection.execute(
-      'INSERT INTO users (Username, Email, Password) VALUES (?, ?, ?)',
-      [username, email, hashedPassword]
-    );
-
-    connection.release();
-    res.status(201).json({ message: 'Usuário registrado com sucesso!', userId: result.insertId });
-  } catch (err) {
-    console.error('Erro ao registrar usuário:', err);
-    res.status(500).json({ message: 'Erro ao registrar usuário.' });
-  }
 });
 
-// Rota de login
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+// Obter detalhes de uma academia específica
+router.get('/:id', authenticateToken, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ error: 'ID inválido' });
+        }
 
-  try {
-      const connection = await pool.getConnection();
+        const gym = await Gym.findOne({
+            _id: req.params.id,
+            user_responsible: req.user.userId
+        });
 
-      // Verifica se o email existe
-      const [rows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
-      if (rows.length === 0) {
-          connection.release();
-          return res.status(401).json({ message: 'Credenciais inválidas.' });
-      }
+        if (!gym) {
+            return res.status(404).json({ error: 'Academia não encontrada' });
+        }
 
-      const user = rows[0];
+        res.json(gym);
+    } catch (error) {
+        console.error('Erro ao obter academia:', error);
+        res.status(500).json({ error: 'Erro ao obter academia' });
+    }
+});
 
-      // Verifica a senha
-      const isPasswordValid = await bcrypt.compare(password, user.Password);
-      if (!isPasswordValid) {
-          connection.release();
-          return res.status(401).json({ message: 'Credenciais inválidas.' });
-      }
+// Atualizar uma academia
+router.put('/:id', authenticateToken, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ error: 'ID inválido' });
+        }
 
-      connection.release();
+        const { name, address, open_time, email_address, phone } = req.body;
 
-      // Gera o token JWT
-      const token = jwt.sign(
-          { userId: user.Id, username: user.Username, email: user.Email }, // Payload
-          process.env.JWT_SECRET, // Agora usando diretamente do ambiente
-          { expiresIn: '1h' } // Tempo de expiração
-      );
+        const updatedGym = await Gym.findOneAndUpdate(
+            { 
+                _id: req.params.id,
+                user_responsible: req.user.userId 
+            },
+            { 
+                name, 
+                address, 
+                open_time, 
+                email_address, 
+                phone 
+            },
+            { 
+                new: true,
+                runValidators: true 
+            }
+        );
 
-      // Retorna o token e os dados do usuário
-      res.status(200).json({
-          message: 'Login bem-sucedido!',
-          token,
-          user: {
-              username: user.Username,
-              email: user.Email
-          }
-      });
-  } catch (err) {
-      console.error('Erro ao fazer login:', err);
-      res.status(500).json({ message: 'Erro ao fazer login.' });
-  }
+        if (!updatedGym) {
+            return res.status(404).json({ error: 'Academia não encontrada' });
+        }
+
+        res.json({
+            message: 'Academia atualizada com sucesso!',
+            gym: updatedGym
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar academia:', error);
+        res.status(500).json({ error: 'Erro ao atualizar academia' });
+    }
+});
+
+// Deletar uma academia
+router.delete('/:id', authenticateToken, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ error: 'ID inválido' });
+        }
+
+        const deletedGym = await Gym.findOneAndDelete({
+            _id: req.params.id,
+            user_responsible: req.user.userId
+        });
+
+        if (!deletedGym) {
+            return res.status(404).json({ error: 'Academia não encontrada' });
+        }
+
+        res.json({ message: 'Academia deletada com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao deletar academia:', error);
+        res.status(500).json({ error: 'Erro ao deletar academia' });
+    }
 });
 
 module.exports = router;

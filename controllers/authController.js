@@ -1,41 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const mysql = require('mysql2/promise');
-
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
-
-// Configuração do CORS para rotas específicas
-router.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
-});
+const User = require('../models/User');
 
 // Rota de Registro
 router.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
-    const [userExists] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-
-    if (userExists.length > 0) {
-      return res.status(409).json({ error: 'Email já cadastrado!' });
+    
+    // Verifica se o usuário já existe
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(409).json({ 
+        error: existingUser.email === email ? 'Email já cadastrado!' : 'Nome de usuário já existe!'
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await pool.query(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      [username, email, hashedPassword]
-    );
-
-    res.status(201).json({ message: 'Usuário criado com sucesso!' });
+    // Cria o novo usuário (a senha é hasheada automaticamente pelo pre-save hook)
+    const user = await User.create({ username, email, password });
+    
+    res.status(201).json({ 
+      message: 'Usuário criado com sucesso!',
+      userId: user._id 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Erro no registro!' });
   }
@@ -45,24 +32,31 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const [user] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    const user = await User.findOne({ email });
 
-    if (!user.length) {
+    if (!user) {
       return res.status(401).json({ error: 'Credenciais inválidas!' });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user[0].password);
+    const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Credenciais inválidas!' });
     }
 
     const token = jwt.sign(
-      { userId: user[0].id, email: user[0].email },
+      { userId: user._id, email: user.email, username: user.username },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    res.json({ token, user: { email: user[0].email, username: user[0].username } });
+    res.json({ 
+      token,
+      user: { 
+        id: user._id,
+        email: user.email, 
+        username: user.username 
+      } 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Erro no login!' });
   }
