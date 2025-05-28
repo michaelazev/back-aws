@@ -11,15 +11,33 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 // Configuração do CORS
-app.use(cors({
+const corsOptions = {
   origin: [
-    'https://front-aws-psi.vercel.app', // Seu novo frontend
-    'https://tecfit-nu.vercel.app',     // Frontend antigo (se ainda relevante)
-    'http://localhost:3000'             // Para desenvolvimento local
+    'https://front-aws-psi.vercel.app',
+    'https://tecfit-nu.vercel.app',
+    'http://localhost:3000'
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Adicione OPTIONS
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Headers'
+  ],
+  credentials: true
+};
+
+// Habilite CORS pré-flight para todas as rotas
+app.options('*', cors(corsOptions)); // Adicione esta linha
+app.use(cors(corsOptions));
+
+// Adicione este middleware para lidar com requisições OPTIONS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', corsOptions.origin);
+  res.header('Access-Control-Allow-Methods', corsOptions.methods.join(','));
+  res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
+  next();
+});
 
 // Middleware para analisar JSON  
 app.use(express.json());

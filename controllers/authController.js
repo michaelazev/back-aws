@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 
 const router = express.Router();
-const jwtSecret = 'd7e05170de09b548be953c08f46296af5ada161b7fdaca8ad3c9d25732f4c720';
 
 // Configuração do pool de conexões
 const pool = mysql.createPool({
