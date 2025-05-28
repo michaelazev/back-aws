@@ -12,7 +12,11 @@ const port = process.env.PORT || 8080;
 
 // Configuração do CORS
 app.use(cors({
-  origin: ['https://tecfit-nu.vercel.app', 'http://localhost:3000'], // Permite requisições do frontend e do localhost
+  origin: [
+    'https://front-aws-psi.vercel.app', // Seu novo frontend
+    'https://tecfit-nu.vercel.app',     // Frontend antigo (se ainda relevante)
+    'http://localhost:3000'             // Para desenvolvimento local
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
 }));

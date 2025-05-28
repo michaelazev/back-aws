@@ -1,7 +1,13 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
-const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+require('dotenv').config(); // Adicione esta linha para carregar variáveis de ambiente
 
+const router = express.Router();
+const jwtSecret = process.env.JWT_SECRET; // Agora pegando do ambiente
+
+// Configuração do pool de conexões
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'tecfitdb.mysql.database.azure.com',
   user: process.env.DB_USER || 'tecfit',
@@ -12,78 +18,87 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
-// Rota para obter todas as academias
-router.get('/', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT * FROM gym');
-    res.json(rows);
-  } catch (err) {
-    console.error('Erro ao buscar academias:', err);
-    res.status(500).json({ message: 'Erro ao buscar dados das academias.' });
-  }
-});
+// Rota de registro
+router.post('/register', async (req, res) => {
+  const { username, email, password } = req.body;
 
-// Rota para obter uma academia por ID
-router.get('/:id', async (req, res) => {
-  const gymId = req.params.id;
   try {
-    const [rows] = await pool.query('SELECT * FROM gym WHERE gym_id = ?', [gymId]);
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'Academia não encontrada.' });
+    const connection = await pool.getConnection();
+
+    // Verifica se o usuário já existe
+    const [rows] = await connection.execute('SELECT * FROM users WHERE Username = ?', [username]);
+    if (rows.length > 0) {
+      connection.release();
+      return res.status(409).json({ message: 'Nome de usuário já existe.' });
     }
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Erro ao buscar academia:', err);
-    res.status(500).json({ message: 'Erro ao buscar academia.' });
-  }
-});
 
-// Rota para criar uma nova academia
-router.post('/', async (req, res) => {
-  const { name, address, open_time, email_address, phone, user_responsible } = req.body;
-  try {
-    const [result] = await pool.query(
-      'INSERT INTO gym (name, address, open_time, email_address, phone, user_responsible) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, address, open_time, email_address, phone, user_responsible]
+    const [emailRows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
+    if (emailRows.length > 0) {
+      connection.release();
+      return res.status(409).json({ message: 'Email já existe.' });
+    }
+
+    // Criptografa a senha
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insere o novo usuário com o userId
+    const [result] = await connection.execute(
+      'INSERT INTO users (Username, Email, Password) VALUES (?, ?, ?)',
+      [username, email, hashedPassword]
     );
-    res.status(201).json({ message: 'Academia criada com sucesso!', gymId: result.insertId });
+
+    connection.release();
+    res.status(201).json({ message: 'Usuário registrado com sucesso!', userId: result.insertId });
   } catch (err) {
-    console.error('Erro ao criar academia:', err);
-    res.status(500).json({ message: 'Erro ao criar academia.' });
+    console.error('Erro ao registrar usuário:', err);
+    res.status(500).json({ message: 'Erro ao registrar usuário.' });
   }
 });
 
-// Rota para atualizar uma academia
-router.put('/:id', async (req, res) => {
-  const gymId = req.params.id;
-  const { name, address, open_time, email_address, phone, user_responsible } = req.body;
-  try {
-    const [result] = await pool.query(
-      'UPDATE gym SET name = ?, address = ?, open_time = ?, email_address = ?, phone = ?, user_responsible = ? WHERE gym_id = ?',
-      [name, address, open_time, email_address, phone, user_responsible, gymId]
-    );
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Academia não encontrada.' });
-    }
-    res.json({ message: 'Academia atualizada com sucesso!' });
-  } catch (err) {
-    console.error('Erro ao atualizar academia:', err);
-    res.status(500).json({ message: 'Erro ao atualizar academia.' });
-  }
-});
+// Rota de login
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
 
-// Rota para deletar uma academia
-router.delete('/:id', async (req, res) => {
-  const gymId = req.params.id;
   try {
-    const [result] = await pool.query('DELETE FROM gym WHERE gym_id = ?', [gymId]);
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Academia não encontrada.' });
-    }
-    res.json({ message: 'Academia deletada com sucesso!' });
+      const connection = await pool.getConnection();
+
+      // Verifica se o email existe
+      const [rows] = await connection.execute('SELECT * FROM users WHERE Email = ?', [email]);
+      if (rows.length === 0) {
+          connection.release();
+          return res.status(401).json({ message: 'Credenciais inválidas.' });
+      }
+
+      const user = rows[0];
+
+      // Verifica a senha
+      const isPasswordValid = await bcrypt.compare(password, user.Password);
+      if (!isPasswordValid) {
+          connection.release();
+          return res.status(401).json({ message: 'Credenciais inválidas.' });
+      }
+
+      connection.release();
+
+      // Gera o token JWT
+      const token = jwt.sign(
+          { userId: user.Id, username: user.Username, email: user.Email }, // Payload
+          process.env.JWT_SECRET, // Agora usando diretamente do ambiente
+          { expiresIn: '1h' } // Tempo de expiração
+      );
+
+      // Retorna o token e os dados do usuário
+      res.status(200).json({
+          message: 'Login bem-sucedido!',
+          token,
+          user: {
+              username: user.Username,
+              email: user.Email
+          }
+      });
   } catch (err) {
-    console.error('Erro ao deletar academia:', err);
-    res.status(500).json({ message: 'Erro ao deletar academia.' });
+      console.error('Erro ao fazer login:', err);
+      res.status(500).json({ message: 'Erro ao fazer login.' });
   }
 });
 
